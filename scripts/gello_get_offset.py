@@ -6,7 +6,8 @@ from typing import Tuple
 
 import numpy as np
 import tyro
-
+import sys
+sys.path.append("/home/ju/Workspace/gello_software")
 from gello.dynamixel.driver import DynamixelDriver
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -14,12 +15,18 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 MENAGERIE_ROOT: Path = Path(__file__).parent / "third_party" / "mujoco_menagerie"
 
 
+
 @dataclass
 class Args:
-    port: str = "/dev/ttyUSB0"
+    # port: str = "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A50285BI-if00-port0"
+    port: str = "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTAFPVNW-if00-port0"
+    
     """The port that GELLO is connected to."""
+    # left
+    # start_joints: Tuple[float, ...] = (0, -1.57, -1.57, -1.57, 1.57, 0 )
 
-    start_joints: Tuple[float, ...] = (0, 0, 0, 0, 0, 0)
+    # right
+    start_joints: Tuple[float, ...] = (0, -1.57, 1.57, -1.57, -1.57, 0 )
     """The joint angles that the GELLO is placed in at (in radians)."""
 
     joint_signs: Tuple[float, ...] = (1, 1, -1, 1, 1, 1)
@@ -65,6 +72,8 @@ def get_config(args: Args) -> None:
     for _ in range(1):
         best_offsets = []
         curr_joints = driver.get_joints()
+        print("start_joints               : ", [f"{x:.3f}" for x in args.start_joints])
+        print("current joints               : ", [f"{x:.3f}" for x in curr_joints])
         for i in range(args.num_robot_joints):
             best_offset = 0
             best_error = 1e6

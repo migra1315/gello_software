@@ -38,6 +38,7 @@ class BimanualAgent(Agent):
             assert L == half_dim * 2, f"{key} must be even, something is wrong"
             left_obs[key] = val[:half_dim]
             right_obs[key] = val[half_dim:]
-        return np.concatenate(
-            [self.agent_left.act(left_obs), self.agent_right.act(right_obs)]
-        )
+        res = np.concatenate(
+            [self.agent_left.act(left_obs), self.agent_right.act(right_obs)])
+        return res #+[3.14, 3.14,-3.14,-3.14,4.71,7.85,0,-10.99,0,1.57,-1.57,-3.14,3.14,0]
+        

@@ -2,17 +2,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import tyro
-
+import sys
+sys.path.append("/home/ju/Workspace/gello_software")
 from gello.robots.robot import BimanualRobot, PrintRobot
 from gello.zmq_core.robot_node import ZMQServerRobot
 
 
 @dataclass
 class Args:
-    robot: str = "xarm"
+    robot: str = "bimanual_ur"
     robot_port: int = 6001
     hostname: str = "127.0.0.1"
-    robot_ip: str = "192.168.1.10"
+    robot_ip: str = "192.168.123.100"
 
 
 def launch_robot_server(args: Args):
@@ -82,8 +83,8 @@ def launch_robot_server(args: Args):
             from gello.robots.ur import URRobot
 
             # IP for the bimanual robot setup is hardcoded
-            _robot_l = URRobot(robot_ip="192.168.2.10")
-            _robot_r = URRobot(robot_ip="192.168.1.10")
+            _robot_l = URRobot(robot_ip="192.168.123.101",no_gripper=False,gripper_type='chingtek')
+            _robot_r = URRobot(robot_ip="192.168.123.100",no_gripper=False,gripper_type='dh')
             robot = BimanualRobot(_robot_l, _robot_r)
         elif args.robot == "yam":
             from gello.robots.yam import YAMRobot

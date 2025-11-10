@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from multiprocessing import Process
+import sys
+sys.path.append("/home/ju/Workspace/gello_software")
 
 import tyro
 
@@ -9,8 +11,8 @@ from gello.zmq_core.camera_node import ZMQServerCamera
 
 @dataclass
 class Args:
-    # hostname: str = "127.0.0.1"
-    hostname: str = "128.32.175.167"
+    hostname: str = "127.0.0.1"
+    # hostname: str = "128.32.175.167"
 
 
 def launch_server(port: int, camera_id: int, args: Args):

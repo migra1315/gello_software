@@ -5,11 +5,13 @@ from typing import Optional, Tuple
 
 import numpy as np
 import tyro
-
+import sys
+sys.path.append("/home/ju/Workspace/gello_software")
 from gello.env import RobotEnv
 from gello.robots.robot import PrintRobot
 from gello.utils.launch_utils import instantiate_from_dict
 from gello.zmq_core.robot_node import ZMQClientRobot
+from gello.zmq_core.camera_node import ZMQClientCamera
 
 
 def print_color(*args, color=None, attrs=(), **kwargs):
@@ -22,12 +24,12 @@ def print_color(*args, color=None, attrs=(), **kwargs):
 
 @dataclass
 class Args:
-    agent: str = "none"
+    agent: str = "gello"
     robot_port: int = 6001
     wrist_camera_port: int = 5000
     base_camera_port: int = 5001
     hostname: str = "127.0.0.1"
-    robot_type: str = None  # only needed for quest agent or spacemouse agent
+    robot_type: str = "ur"  # only needed for quest agent or spacemouse agent
     hz: int = 100
     start_joints: Optional[Tuple[float, ...]] = None
 
@@ -35,7 +37,7 @@ class Args:
     mock: bool = False
     use_save_interface: bool = False
     data_dir: str = "~/bc_data"
-    bimanual: bool = False
+    bimanual: bool = True
     verbose: bool = False
 
     def __post_init__(self):
@@ -50,8 +52,8 @@ def main(args):
     else:
         camera_clients = {
             # you can optionally add camera nodes here for imitation learning purposes
-            # "wrist": ZMQClientCamera(port=args.wrist_camera_port, host=args.hostname),
-            # "base": ZMQClientCamera(port=args.base_camera_port, host=args.hostname),
+            #  "wrist": ZMQClientCamera(port=args.wrist_camera_port, host=args.hostname),
+            #  "base": ZMQClientCamera(port=args.base_camera_port, host=args.hostname),
         }
         robot_client = ZMQClientRobot(port=args.robot_port, host=args.hostname)
     env = RobotEnv(robot_client, control_rate_hz=args.hz, camera_dict=camera_clients)
@@ -60,8 +62,8 @@ def main(args):
     if args.bimanual:
         if args.agent == "gello":
             # dynamixel control box port map (to distinguish left and right gello)
-            right = "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT7WBG6A-if00-port0"
-            left = "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FT7WBEIA-if00-port0"
+            right = "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTAFPVNW-if00-port0"
+            left = "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A50285BI-if00-port0"
             agent_cfg = {
                 "_target_": "gello.agents.agent.BimanualAgent",
                 "agent_left": {
@@ -146,7 +148,10 @@ def main(args):
                 reset_joints = np.array(args.start_joints)
 
             curr_joints = env.get_obs()["joint_positions"]
-            if reset_joints.shape == curr_joints.shape:
+            print("---------------------")
+            print(curr_joints)
+            if reset_joints.shape == len(curr_joints):
+            # if reset_joints.shape == curr_joints.shape:
                 max_delta = (np.abs(curr_joints - reset_joints)).max()
                 steps = min(int(max_delta / 0.01), 100)
 
@@ -178,17 +183,29 @@ def main(args):
     agent = instantiate_from_dict(agent_cfg)
     # going to start position
     print("Going to start position")
-    start_pos = agent.act(env.get_obs())
-    obs = env.get_obs()
-    joints = obs["joint_positions"]
 
-    abs_deltas = np.abs(start_pos - joints)
-    id_max_joint_delta = np.argmax(abs_deltas)
+    # while(1):
+    #     start_pos = agent.act(env.get_obs())
+    #     print("gello机械臂的当前角度",start_pos)
 
-    max_joint_delta = 0.8
-    if abs_deltas[id_max_joint_delta] > max_joint_delta:
+    while(1):
+        start_pos = agent.act(env.get_obs())
+        print("gello机械臂的当前角度",start_pos)
+
+        obs = env.get_obs()
+        joints = obs["joint_positions"]
+        print("ur机械臂的当前角度",joints)
+
+        abs_deltas = np.abs(start_pos - joints)
+        id_max_joint_delta = np.argmax(abs_deltas)
+
+        max_joint_delta = 0.8
+
+        if (abs_deltas[id_max_joint_delta] < max_joint_delta):
+            break
+
         id_mask = abs_deltas > max_joint_delta
-        print()
+        print(id_mask)
         ids = np.arange(len(id_mask))[id_mask]
         for i, delta, joint, current_j in zip(
             ids,
@@ -197,9 +214,24 @@ def main(args):
             joints[id_mask],
         ):
             print(
-                f"joint[{i}]: \t delta: {delta:4.3f} , leader: \t{joint:4.3f} , follower: \t{current_j:4.3f}"
+                f"\rjoint[{i}]: \t delta: {delta:4.3f} , leader: \t{joint:4.3f} , follower: \t{current_j:4.3f}"
             )
-        return
+            time.sleep(0.1)
+        
+
+    # if abs_deltas[id_max_joint_delta] > max_joint_delta:
+    #     id_mask = abs_deltas > max_joint_delta
+    #     ids = np.arange(len(id_mask))[id_mask]
+    #     for i, delta, joint, current_j in zip(
+    #         ids,
+    #         abs_deltas[id_mask],
+    #         start_pos[id_mask],
+    #         joints[id_mask],
+    #     ):
+    #         print(
+    #             f"joint[{i}]: \t delta: {delta:4.3f} , leader: \t{joint:4.3f} , follower: \t{current_j:4.3f}"
+    #         )
+    #     return
 
     print(f"Start pos: {len(start_pos)}", f"Joints: {len(joints)}")
     assert len(start_pos) == len(
@@ -220,6 +252,7 @@ def main(args):
     obs = env.get_obs()
     joints = obs["joint_positions"]
     action = agent.act(obs)
+    print(action - joints)
     if (action - joints > 0.5).any():
         print("Action is too big")
 

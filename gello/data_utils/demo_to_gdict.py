@@ -4,7 +4,8 @@ import pickle
 import shutil
 from dataclasses import dataclass
 from typing import Tuple
-
+import sys
+sys.path.append("/home/ju/Workspace/gello_software")
 import numpy as np
 import tyro
 from natsort import natsorted
@@ -196,7 +197,7 @@ def convert_single_demo(
 
 @dataclass
 class Args:
-    source_dir: str
+    source_dir: str = '/home/ju/bc_data/gello'
     vis: bool = True
 
 
