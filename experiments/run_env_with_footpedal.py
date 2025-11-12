@@ -3,7 +3,6 @@ import time
 import pygame
 from dataclasses import dataclass
 from typing import Optional, Tuple
-
 import numpy as np
 import tyro
 import sys
@@ -13,6 +12,7 @@ from gello.robots.robot import PrintRobot
 from gello.utils.launch_utils import instantiate_from_dict
 from gello.zmq_core.robot_node import ZMQClientRobot
 from gello.zmq_core.camera_node import ZMQClientCamera
+from gello.agents.agent import Agent
 
 
 def print_color(*args, color=None, attrs=(), **kwargs):
