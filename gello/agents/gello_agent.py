@@ -82,7 +82,12 @@ PORT_CONFIG_MAP: Dict[str, DynamixelRobotConfig] = {
     "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A50285BI-if00-port0": DynamixelRobotConfig(
         joint_ids=(1, 2, 3, 4, 5, 6),
         joint_offsets=(
-0*np.pi/2, 3*np.pi/2, -1*np.pi/2, 3*np.pi/2, -1*np.pi/2, 0*np.pi/2 
+            0*np.pi/2, 
+            3*np.pi/2, 
+            -1*np.pi/2, 
+            3*np.pi/2, 
+            -1*np.pi/2, 
+            0*np.pi/2 
         ),
         joint_signs=(1, 1, -1, 1, 1, 1),
         gripper_config=(7, 146, 200),
@@ -94,13 +99,13 @@ PORT_CONFIG_MAP: Dict[str, DynamixelRobotConfig] = {
         
         joint_ids=(1, 2, 3, 4, 5, 6),
         joint_offsets=(
-            # 0,
-            # 1 * np.pi / 2 + np.pi,
-            # np.pi / 2 + 0 * np.pi,
-            # 0 * np.pi + np.pi / 2,
-            # np.pi - 2 * np.pi / 2,
-            # -1 * np.pi / 2 + 2 * np.pi,
-3*np.pi/2, 3*np.pi/2, 2*np.pi/2, 2*np.pi/2, 2*np.pi/2, 3*np.pi/2
+
+            3*np.pi/2, 
+            3*np.pi/2, 
+            2*np.pi/2, 
+            2*np.pi/2, 
+            2*np.pi/2, 
+            3*np.pi/2
         ),
         joint_signs=(1, 1, -1, 1, 1, 1),
         gripper_config=(7, 146, 200),

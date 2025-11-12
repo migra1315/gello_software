@@ -40,5 +40,4 @@ class BimanualAgent(Agent):
             right_obs[key] = val[half_dim:]
         res = np.concatenate(
             [self.agent_left.act(left_obs), self.agent_right.act(right_obs)])
-        return res #+[3.14, 3.14,-3.14,-3.14,4.71,7.85,0,-10.99,0,1.57,-1.57,-3.14,3.14,0]
-        
+        return res 
