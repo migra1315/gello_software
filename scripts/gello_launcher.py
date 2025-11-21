@@ -192,9 +192,18 @@ class CommandExecutor(QThread):
                                     shell=True
                                 )
                             
-                            # 在新终端中执行时，我们无法直接捕获输出，所以模拟成功
+                            # 在新终端中执行时，记录命令启动信息
                             self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令已在新终端中启动: {self.command}")
-                            # 发送完成信号，让主程序知道命令已启动并视为完成
+                            self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 请在新弹出的终端窗口中查看详细输出")
+                            
+                            # 对于新终端执行的命令，我们需要跟踪它以便后续停止
+                            if sys.platform == 'win32':
+                                # Windows下获取新终端进程信息
+                                # 注意：在Windows下通过cmd启动的进程较难直接跟踪，我们将存储命令信息
+                                self.process_info = {"type": "cmd", "command": self.command}
+                            else:
+                                # Linux下尝试获取终端进程信息
+                                self.process_info = {"type": "terminal", "command": self.command}
                             self.finished_signal.emit(0)  # 发送成功退出码
                             return
                         finally:
@@ -399,6 +408,7 @@ class CommandExecutor(QThread):
         self.running = False
         self.stop_timeout_timer()
         
+        # 处理直接启动的进程
         if self.process:
             try:
                 if sys.platform == 'win32':
@@ -415,7 +425,12 @@ class CommandExecutor(QThread):
                             os.kill(self.process.pid, signal.SIGTERM)
                         except (AttributeError, OSError):
                             # 在Windows上可能无法使用SIGTERM
-                            pass
+                            try:
+                                # 使用taskkill强制终止进程树
+                                subprocess.run(['taskkill', '/F', '/T', '/PID', str(self.process.pid)], 
+                                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                            except Exception as inner_e:
+                                self.error_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 强制终止进程时出错: {str(inner_e)}")
                 else:
                     # 在Unix系统上，可以尝试优雅终止
                     self.process.terminate()
@@ -423,11 +438,47 @@ class CommandExecutor(QThread):
                     try:
                         self.process.wait(timeout=2)
                     except subprocess.TimeoutExpired:
-                        self.process.kill()
+                        # 尝试终止整个进程组
+                        try:
+                            os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+                        except (AttributeError, OSError):
+                            # 如果无法终止进程组，尝试单独终止进程
+                            self.process.kill()
             except Exception as e:
                 self.error_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 停止进程时出错: {str(e)}")
             finally:
                 self.process = None
+        
+        # 处理在新终端中启动的进程
+        if hasattr(self, 'process_info') and self.process_info:
+            try:
+                if sys.platform == 'win32':
+                    # Windows下尝试终止相关的终端进程
+                    subprocess.run(['taskkill', '/F', '/IM', 'cmd.exe'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 已尝试终止Windows终端进程")
+                else:
+                    # Linux下尝试终止相关的终端进程
+                    # 根据使用的终端类型终止
+                    terminal_processes = ['gnome-terminal', 'xterm', 'xfce4-terminal']
+                    for terminal in terminal_processes:
+                        try:
+                            subprocess.run(['pkill', '-f', terminal], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        except Exception as inner_e:
+                            pass  # 忽略错误，继续尝试其他终端
+                    
+                    # 同时尝试终止与命令相关的Python进程
+                    if 'python' in self.process_info['command']:
+                        try:
+                            subprocess.run(['pkill', '-f', 'python.*gello'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                            self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 已尝试终止相关Python进程")
+                        except Exception as inner_e:
+                            pass
+                    
+                    self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 已尝试终止Linux终端进程")
+            except Exception as e:
+                self.error_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 停止终端进程时出错: {str(e)}")
+            finally:
+                self.process_info = None
 
 class GelloLauncher(QMainWindow):
     """Gello项目启动自动化工具主窗口"""
@@ -1014,15 +1065,51 @@ class GelloLauncher(QMainWindow):
             return
         
         self.is_running = False
+        self.append_output("开始终止所有进程...")
         
         # 停止所有命令执行器
-        for executor in self.command_executors:
-            if executor and executor.isRunning():
-                executor.stop()
+        for i, executor in enumerate(self.command_executors):
+            if executor:
+                try:
+                    # 不检查isRunning()，直接调用stop()以确保终止
+                    self.append_output(f"终止第{i+1}个进程...")
+                    executor.stop()
+                except Exception as e:
+                    self.append_error(f"终止进程时出错: {str(e)}")
         
+        # 清空执行器列表
         self.command_executors.clear()
+        
+        # 对于Linux系统，添加额外的进程清理措施
+        if not sys.platform == 'win32':
+            try:
+                # 强制终止可能遗留的Python进程
+                self.append_output("清理可能遗留的Python进程...")
+                import subprocess
+                # 终止与gello相关的Python进程
+                subprocess.run(['pkill', '-f', 'python.*gello'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                # 终止终端进程
+                subprocess.run(['pkill', '-f', 'gnome-terminal.*gello'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                subprocess.run(['pkill', '-f', 'xterm.*gello'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                subprocess.run(['pkill', '-f', 'xfce4-terminal.*gello'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            except Exception as e:
+                self.append_error(f"清理进程时出错: {str(e)}")
+        
+        # 对于Windows系统，使用taskkill强制清理
+        else:
+            try:
+                self.append_output("清理可能遗留的Windows进程...")
+                import subprocess
+                # 终止Python进程
+                subprocess.run(['taskkill', '/F', '/IM', 'python.exe'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                # 终止终端进程
+                subprocess.run(['taskkill', '/F', '/IM', 'cmd.exe'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            except Exception as e:
+                self.append_error(f"清理Windows进程时出错: {str(e)}")
+        
+        # 更新UI状态
         self.update_button_states()
-        self.append_error("用户终止了所有命令的执行")
+        self.append_output("所有命令已终止")
         self.current_command_label.setText("已终止")
         self.stop_time_tracking()
     
