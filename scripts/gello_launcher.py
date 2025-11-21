@@ -4,6 +4,7 @@ import subprocess
 import threading
 import time
 import psutil
+import shutil
 from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -402,6 +403,12 @@ class GelloLauncher(QMainWindow):
         self.executor = None
         self.is_running = False
         self.all_processes = []
+        # 新增: 存储所有命令执行器实例
+        self.command_executors = []
+        # 新增: 跟踪已完成的命令数量
+        self.completed_commands = 0
+        # 新增: 跟踪每个命令的状态
+        self.command_statuses = ["pending"] * len(self.commands)
         
         # 添加状态监控变量
         self.start_time = None
@@ -673,103 +680,100 @@ class GelloLauncher(QMainWindow):
             pass
     
     def start_all_commands(self):
-        """启动所有命令的执行"""
+        """启动所有命令的执行（并行模式）"""
         if self.is_running:
             QMessageBox.warning(self, "警告", "程序正在运行中，请先停止当前运行")
             return
         
         # 重置状态
-        self.current_command_index = -1
         self.is_running = True
+        self.completed_commands = 0
+        self.command_statuses = ["pending"] * len(self.commands)
+        self.command_executors = []
         self.update_button_states()
         
         # 清空日志
         self.clear_logs()
-        self.append_output("开始执行项目启动流程")
+        self.append_output("开始执行项目启动流程（并行模式）")
         
         # 开始时间跟踪
         self.start_time_tracking()
         
-        # 开始执行第一个命令
-        self.execute_next_command()
+        # 并行启动所有命令
+        for index, command in enumerate(self.commands):
+            self.execute_command_in_parallel(index, command)
     
-    def execute_next_command(self):
-        """执行下一个命令"""
+    def execute_command_in_parallel(self, index, command):
+        """并行执行单个命令"""
         if not self.is_running:
             return
         
-        # 增加命令索引
-        self.current_command_index += 1
+        # 更新命令状态为执行中
+        self.command_statuses[index] = "running"
+        self.update_command_status(index, "running")
+        
+        # 创建命令执行器，设置new_terminal=True以在新终端执行
+        executor = CommandExecutor(
+            command['cmd'],
+            index,
+            command['requires_sudo'],
+            new_terminal=True
+        )
+        
+        # 连接信号到槽函数
+        executor.output_signal.connect(self.append_output)
+        executor.error_signal.connect(self.append_error)
+        executor.finished_signal.connect(lambda exit_code, idx=index: self.on_command_completed_parallel(idx, exit_code == 0))
+        
+        # 保存执行器实例
+        self.command_executors.append(executor)
+        
+        # 启动命令执行
+        executor.start()
+        
+        # 更新状态栏显示正在启动的命令
+        self.current_command_label.setText(f"正在启动: {command['desc']}")
+    
+    def execute_next_command(self):
+        """保留此方法以保持兼容性，但不再使用顺序执行逻辑"""
+        pass
+    
+    def on_command_completed_parallel(self, index, success):
+        """并行模式下命令执行完成后的回调"""
+        # 更新命令状态
+        status = "success" if success else "failed"
+        self.command_statuses[index] = status
+        self.update_command_status(index, status)
+        
+        # 增加已完成命令计数
+        self.completed_commands += 1
+        
+        # 如果命令失败，记录错误信息但不中断其他命令
+        if not success:
+            self.append_error(f"命令 '{self.commands[index]['desc']}' 执行失败")
+        else:
+            self.append_output(f"命令 '{self.commands[index]['desc']}' 执行成功")
         
         # 检查是否所有命令都已执行完毕
-        if self.current_command_index >= len(self.commands):
+        if self.completed_commands >= len(self.commands):
             self.is_running = False
             self.update_button_states()
             
             # 停止时间跟踪
             self.stop_time_tracking()
             
-            self.append_output("所有命令执行完毕")
+            # 检查是否有失败的命令
+            has_failed = "failed" in self.command_statuses
+            if has_failed:
+                self.append_output("所有命令已执行完毕，但部分命令执行失败")
+            else:
+                self.append_output("所有命令执行完毕")
+            
             self.current_command_label.setText("完成: 所有命令已执行")
-            return
-        
-        # 获取当前命令
-        current_command = self.commands[self.current_command_index]
-        
-        # 更新当前命令状态为执行中
-        self.update_command_status(self.current_command_index, "running")
-        
-        # 记录当前步骤开始时间
-        self.current_step_start_time = datetime.now()
-        
-        # 创建命令执行器，设置new_terminal=True以在不同终端执行每个命令
-        self.command_executor = CommandExecutor(
-            current_command['cmd'],
-            self.current_command_index,
-            current_command['requires_sudo'],
-            new_terminal=True
-        )
-        # 连接信号到槽函数
-        self.command_executor.output_signal.connect(self.append_output)
-        self.command_executor.error_signal.connect(self.append_error)
-        self.command_executor.finished_signal.connect(lambda exit_code: self.on_command_completed(self.current_command_index, exit_code == 0))
-        self.command_executor.start()
     
     def on_command_completed(self, index, success):
-        """命令执行完成后的回调"""
-        # 更新命令状态
-        status = "success" if success else "failed"
-        self.update_command_status(index, status)
-        
-        # 如果命令失败，显示错误对话框
-        if not success:
-            reply = QMessageBox.question(
-                self,
-                "命令执行失败",
-                f"命令 '{self.commands[index]['desc']}' 执行失败，是否重试？",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Ignore
-            )
-            
-            if reply == QMessageBox.StandardButton.Yes:
-                # 重试当前命令
-                self.current_command_index -= 1  # 减1，因为execute_next_command会加1
-                QTimer.singleShot(0, self.execute_next_command)
-            elif reply == QMessageBox.StandardButton.No:
-                # 停止执行
-                self.is_running = False
-            elif reply == QMessageBox.StandardButton.Ignore:
-                # 跳过当前命令，继续下一个
-                QTimer.singleShot(0, self.execute_next_command)
-                self.update_button_states()
-                self.append_error("用户终止了执行")
-                self.current_command_label.setText("已终止")
-                self.stop_time_tracking()
-            else:  # Skip
-                # 跳过当前命令，执行下一个
-                QTimer.singleShot(0, self.execute_next_command)
-        else:
-            # 命令执行成功，继续执行下一个
-            QTimer.singleShot(0, self.execute_next_command)
+        """保留此方法以保持兼容性，实际使用on_command_completed_parallel"""
+        self.on_command_completed_parallel(index, success)
     
     def on_log_filter_changed(self):
         """处理日志过滤器变更事件"""
@@ -944,28 +948,26 @@ class GelloLauncher(QMainWindow):
             QTimer.singleShot(500, self.execute_next_command)
     
     def stop_current_command(self):
-        """停止当前正在执行的命令"""
-        if self.executor and self.executor.isRunning():
-            self.append_output(f"[{datetime.now().strftime('%H:%M:%S')}] 正在停止当前命令...")
-            self.executor.stop()
-            self.executor.wait()
-            self.append_output(f"[{datetime.now().strftime('%H:%M:%S')}] 当前命令已停止")
-    
-    def stop_execution(self):
-        """停止命令执行"""
+        """停止所有正在执行的命令"""
         if not self.is_running:
             return
         
         self.is_running = False
         
-        # 如果有正在执行的命令，终止它
-        if hasattr(self, 'command_executor'):
-            self.command_executor.stop()
+        # 停止所有命令执行器
+        for executor in self.command_executors:
+            if executor and executor.isRunning():
+                executor.stop()
         
+        self.command_executors.clear()
         self.update_button_states()
-        self.append_error("执行已停止")
-        self.current_command_label.setText("已停止")
+        self.append_error("用户终止了所有命令的执行")
+        self.current_command_label.setText("已终止")
         self.stop_time_tracking()
+    
+    def stop_execution(self):
+        """停止命令执行（与stop_current_command功能相同）"""
+        self.stop_current_command()
 
     def update_button_states(self):
         """更新按钮状态"""
