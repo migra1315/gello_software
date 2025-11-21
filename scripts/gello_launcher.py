@@ -116,21 +116,24 @@ class CommandExecutor(QThread):
                         if sys.platform == 'darwin':  # macOS
                             terminal_cmd = ['open', '-a', 'Terminal', 'bash', '-c']
                         else:  # Linux
-                            # 尝试不同的终端程序
+                            # 尝试不同的终端程序，优先使用gnome-terminal（Ubuntu默认）
                             for term in ['gnome-terminal', 'konsole', 'xterm', 'xfce4-terminal']:
                                 if shutil.which(term):
                                     if term == 'gnome-terminal':
-                                        terminal_cmd = [term, '--', 'bash', '-c']
+                                        # 使用更兼容的参数格式，确保命令能够在新窗口中执行并保持打开
+                                        terminal_cmd = [term, '--window', '--', 'bash', '-c']
                                     elif term == 'konsole':
                                         terminal_cmd = [term, '-e', 'bash', '-c']
                                     elif term == 'xterm':
-                                        terminal_cmd = [term, '-e', 'bash', '-c']
+                                        terminal_cmd = [term, '-hold', '-e', 'bash', '-c']  # 添加-hold参数保持窗口打开
                                     elif term == 'xfce4-terminal':
-                                        terminal_cmd = [term, '-x', 'bash', '-c']
+                                        terminal_cmd = [term, '--hold', '-x', 'bash', '-c']  # 添加--hold参数保持窗口打开
                                     break
                         
                         if terminal_cmd:
-                            full_cmd = terminal_cmd + [f'sudo {self.command} && read -p "按Enter键继续..."']
+                            # 修改命令格式，确保sudo命令执行后终端保持打开，便于查看输出
+                            # 使用分号连接命令，确保即使前面命令失败也能执行read命令
+                            full_cmd = terminal_cmd + [f'sudo {self.command}; read -p "按Enter键继续..."']
                             self.process = subprocess.Popen(
                                 full_cmd,
                                 stdout=subprocess.PIPE,
@@ -215,21 +218,27 @@ class CommandExecutor(QThread):
                         if sys.platform == 'darwin':  # macOS
                             terminal_cmd = ['open', '-a', 'Terminal', 'bash', '-c']
                         else:  # Linux
-                            # 尝试不同的终端程序
+                            # 尝试不同的终端程序，优先使用gnome-terminal（Ubuntu默认）
                             for term in ['gnome-terminal', 'konsole', 'xterm', 'xfce4-terminal']:
                                 if shutil.which(term):
                                     if term == 'gnome-terminal':
-                                        terminal_cmd = [term, '--', 'bash', '-c']
+                                        # 使用更兼容的参数格式，确保命令能够在新窗口中执行并保持打开
+                                        terminal_cmd = [term, '--window', '--', 'bash', '-c']
                                     elif term == 'konsole':
                                         terminal_cmd = [term, '-e', 'bash', '-c']
                                     elif term == 'xterm':
-                                        terminal_cmd = [term, '-e', 'bash', '-c']
+                                        terminal_cmd = [term, '-hold', '-e', 'bash', '-c']  # 添加-hold参数保持窗口打开
                                     elif term == 'xfce4-terminal':
-                                        terminal_cmd = [term, '-x', 'bash', '-c']
+                                        terminal_cmd = [term, '--hold', '-x', 'bash', '-c']  # 添加--hold参数保持窗口打开
                                     break
                         
                         if terminal_cmd:
-                            full_cmd = terminal_cmd + [f'{self.command} && read -p "按Enter键继续..."']
+                            # 修改命令格式，确保即使前面命令失败也能执行read命令，保持终端打开
+                            # 对于Python持续运行的命令，使用sleep命令防止终端立即关闭
+                            if self.command.startswith('python') and ('launch_camera_nodes' in self.command or 'launch_nodes' in self.command or 'run_env' in self.command):
+                                full_cmd = terminal_cmd + [f'{self.command}; echo "\n程序已结束或被终止"; read -p "按Enter键继续..."']
+                            else:
+                                full_cmd = terminal_cmd + [f'{self.command}; read -p "按Enter键继续..."']
                             self.process = subprocess.Popen(
                                 full_cmd,
                                 stdout=subprocess.PIPE,
