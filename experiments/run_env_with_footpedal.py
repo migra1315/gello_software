@@ -65,13 +65,12 @@ def run_control_onestep(
     if use_colors:
         try:
             from termcolor import colored
-
             colors_available = True
-            start_msg = colored("\nStart 🚀🚀🚀", color="green", attrs=["bold"])
+            start_msg = colored("\rStart 🚀🚀🚀", color="green", attrs=["bold"])
         except ImportError:
-            start_msg = "\nStart 🚀🚀🚀"
+            start_msg = "\rStart 🚀🚀🚀"
     else:
-        start_msg = "\nStart 🚀🚀🚀"
+        start_msg = "\rStart 🚀🚀🚀"
 
     print(start_msg)
 
