@@ -57,15 +57,28 @@ class CommandExecutor(QThread):
                     try:
                         # 尝试以管理员权限执行批处理文件
                         creationflags = subprocess.CREATE_NEW_CONSOLE if self.new_terminal else 0
-                        self.process = subprocess.Popen(
-                            ["cmd", "/c", temp_bat],
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            text=True,
-                            bufsize=1,
-                            shell=True,
-                            creationflags=creationflags
-                        )
+                        
+                        if self.new_terminal:
+                            # 在新终端中执行时，使用start命令并立即返回
+                            self.process = subprocess.Popen(
+                                ["start", "cmd", "/c", temp_bat],
+                                shell=True
+                            )
+                            # 立即发送完成信号
+                            self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令已在新终端中启动: {self.command}")
+                            self.finished_signal.emit(0)  # 发送成功退出码
+                            return
+                        else:
+                            # 非新终端模式下正常执行
+                            self.process = subprocess.Popen(
+                                ["cmd", "/c", temp_bat],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True,
+                                bufsize=1,
+                                shell=True,
+                                creationflags=0
+                            )
                     finally:
                         # 确保临时文件被删除
                         try:
@@ -107,10 +120,10 @@ class CommandExecutor(QThread):
                             )
                             # 在新终端中执行时，我们无法直接捕获输出，所以模拟成功
                             self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令已在新终端中启动: {self.command}")
-                            # 模拟命令完成，发送成功信号
+                            self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令已在新终端中启动，请在终端窗口中查看执行结果")
+                            # 发送完成信号，让主程序知道命令已启动并视为完成
                             self.stop_timeout_timer()
                             self.status_signal.emit(self.index, "success")
-                            self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令已在新终端中启动，请在终端窗口中查看执行结果")
                             self.finished_signal.emit(0)
                             return
                         else:
@@ -143,6 +156,8 @@ class CommandExecutor(QThread):
                             )
                             # 在新终端中执行时，我们无法直接捕获输出，所以模拟成功
                             self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令已在新终端中启动: {self.command}")
+                            # 发送完成信号，让主程序知道命令已启动并视为完成
+                            self.finished_signal.emit(0)  # 发送成功退出码
                             return
                         finally:
                             # 确保临时文件被删除
@@ -188,6 +203,8 @@ class CommandExecutor(QThread):
                             )
                             # 在新终端中执行时，我们无法直接捕获输出，所以模拟成功
                             self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令已在新终端中启动: {self.command}")
+                            # 发送完成信号，让主程序知道命令已启动并视为完成
+                            self.finished_signal.emit(0)  # 发送成功退出码
                             return
                         else:
                             self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 未找到可用的终端程序，将在当前进程中执行")
