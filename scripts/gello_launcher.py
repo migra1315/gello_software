@@ -5,6 +5,7 @@ import threading
 import time
 import psutil
 import shutil
+import tempfile
 from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -51,21 +52,39 @@ class CommandExecutor(QThread):
                     self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] Windows下需要管理员权限，请确保程序以管理员身份运行")
                     # 使用临时批处理文件执行命令，提供更好的错误处理
                     temp_bat = os.path.join(tempfile.gettempdir(), f"command_{self.index}.bat")
+                    
+                    # 对于需要持续运行的命令，添加pause以保持终端打开
+                    bat_content = self.command
+                    # 检查是否是持续运行的Python命令（相机节点、机器人节点、环境运行等）
+                    if self.command.startswith('python') and ('launch_camera_nodes' in self.command or 'launch_nodes' in self.command or 'run_env' in self.command):
+                        bat_content += '\npause'
+                    
                     with open(temp_bat, 'w') as f:
-                        f.write(self.command)
+                        f.write(bat_content)
                     
                     try:
                         # 尝试以管理员权限执行批处理文件
                         creationflags = subprocess.CREATE_NEW_CONSOLE if self.new_terminal else 0
                         
                         if self.new_terminal:
-                            # 在新终端中执行时，使用start命令并立即返回
-                            self.process = subprocess.Popen(
-                                ["start", "cmd", "/c", temp_bat],
-                                shell=True
-                            )
-                            # 立即发送完成信号
+                            # 在新终端中执行时，使用start命令并设置合适的参数
+                            # 使用"/k"参数保持终端打开，这样持续运行的命令输出会显示
+                            if self.command.startswith('python') and ('launch_camera_nodes' in self.command or 'launch_nodes' in self.command or 'run_env' in self.command):
+                                # 对于持续运行的命令，使用/k参数
+                                self.process = subprocess.Popen(
+                                    ["start", "cmd", "/k", temp_bat],
+                                    shell=True
+                                )
+                            else:
+                                # 对于一次性命令，使用/c参数
+                                self.process = subprocess.Popen(
+                                    ["start", "cmd", "/c", temp_bat],
+                                    shell=True
+                                )
+                            
+                            # 发送命令已启动的信号
                             self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令已在新终端中启动: {self.command}")
+                            # 立即发送完成信号，让主程序继续执行
                             self.finished_signal.emit(0)  # 发送成功退出码
                             return
                         else:
@@ -146,14 +165,30 @@ class CommandExecutor(QThread):
                         # Windows下在新终端中执行
                         # 使用临时批处理文件执行命令
                         temp_bat = os.path.join(tempfile.gettempdir(), f"command_{self.index}.bat")
+                        
+                        # 对于需要持续运行的命令，添加pause以保持终端打开
+                        bat_content = self.command
+                        # 检查是否是持续运行的Python命令（相机节点、机器人节点、环境运行等）
+                        if self.command.startswith('python') and ('launch_camera_nodes' in self.command or 'launch_nodes' in self.command or 'run_env' in self.command):
+                            bat_content += '\npause'
+                        
                         with open(temp_bat, 'w') as f:
-                            f.write(self.command + '\npause')  # 添加pause以便查看输出
+                            f.write(bat_content)
                         
                         try:
-                            self.process = subprocess.Popen(
-                                ["start", "cmd", "/c", temp_bat],
-                                shell=True
-                            )
+                            # 对于持续运行的命令，使用/k参数保持终端打开
+                            if self.command.startswith('python') and ('launch_camera_nodes' in self.command or 'launch_nodes' in self.command or 'run_env' in self.command):
+                                self.process = subprocess.Popen(
+                                    ["start", "cmd", "/k", temp_bat],
+                                    shell=True
+                                )
+                            else:
+                                # 对于一次性命令，使用/c参数
+                                self.process = subprocess.Popen(
+                                    ["start", "cmd", "/c", temp_bat],
+                                    shell=True
+                                )
+                            
                             # 在新终端中执行时，我们无法直接捕获输出，所以模拟成功
                             self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令已在新终端中启动: {self.command}")
                             # 发送完成信号，让主程序知道命令已启动并视为完成
