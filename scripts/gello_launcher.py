@@ -286,10 +286,9 @@ class GelloLauncher(QMainWindow):
             self.commands = [
                 {"cmd": "sudo chmod 777 /dev/ttyCH343USB0", "desc": "设置USB0权限", "requires_sudo": True},
                 {"cmd": "sudo chmod 777 /dev/ttyCH343USB2", "desc": "设置USB2权限", "requires_sudo": True},
-                {"cmd": "conda activate gello", "desc": "激活conda环境", "requires_sudo": False},
-                {"cmd": "python /home/ju/Workspace/gello_software/experiments/launch_camera_nodes.py", "desc": "启动相机节点", "requires_sudo": False},
-                {"cmd": "python /home/ju/Workspace/gello_software/experiments/launch_nodes.py", "desc": "启动机器人节点", "requires_sudo": False},
-                {"cmd": "python experiments/run_env_with_footpedal.py --agent=gello", "desc": "启动带脚踏板的环境", "requires_sudo": False}
+                # {"cmd": "conda run -n gello python /home/ju/Workspace/gello_software/experiments/launch_camera_nodes.py", "desc": "启动相机节点", "requires_sudo": False},
+                {"cmd": "conda run -n gello python /home/ju/Workspace/gello_software/experiments/launch_nodes.py", "desc": "启动机器人节点", "requires_sudo": False},
+                {"cmd": "conda run -n gello python experiments/run_env_with_footpedal.py --agent=gello", "desc": "启动带脚踏板的环境", "requires_sudo": False}
             ]
         
         self.current_command_index = -1
