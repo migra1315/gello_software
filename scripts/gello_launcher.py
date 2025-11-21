@@ -21,11 +21,12 @@ class CommandExecutor(QThread):
     status_signal = pyqtSignal(int, str)  # (index, status: "running", "success", "failed")
     finished_signal = pyqtSignal(int)  # (exit_code)
 
-    def __init__(self, command, index, requires_sudo=False):
+    def __init__(self, command, index, requires_sudo=False, new_terminal=True):
         super().__init__()
         self.command = command
         self.index = index
         self.requires_sudo = requires_sudo
+        self.new_terminal = new_terminal  # 新增参数，控制是否在新终端中执行
         self.process = None
         self.running = False
         # 添加超时相关变量
@@ -54,6 +55,7 @@ class CommandExecutor(QThread):
                     
                     try:
                         # 尝试以管理员权限执行批处理文件
+                        creationflags = subprocess.CREATE_NEW_CONSOLE if self.new_terminal else 0
                         self.process = subprocess.Popen(
                             ["cmd", "/c", temp_bat],
                             stdout=subprocess.PIPE,
@@ -61,7 +63,7 @@ class CommandExecutor(QThread):
                             text=True,
                             bufsize=1,
                             shell=True,
-                            creationflags=subprocess.CREATE_NEW_CONSOLE
+                            creationflags=creationflags
                         )
                     finally:
                         # 确保临时文件被删除
@@ -73,6 +75,46 @@ class CommandExecutor(QThread):
                 else:
                     # Linux/Mac系统下使用sudo执行
                     self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 请求sudo权限...")
+                    
+                    if self.new_terminal:
+                        # 在新终端中执行带sudo的命令
+                        # 注意：这种方式可能无法正确处理密码输入，实际使用时可能需要调整
+                        terminal_cmd = []
+                        if sys.platform == 'darwin':  # macOS
+                            terminal_cmd = ['open', '-a', 'Terminal', 'bash', '-c']
+                        else:  # Linux
+                            # 尝试不同的终端程序
+                            for term in ['gnome-terminal', 'konsole', 'xterm', 'xfce4-terminal']:
+                                if shutil.which(term):
+                                    if term == 'gnome-terminal':
+                                        terminal_cmd = [term, '--', 'bash', '-c']
+                                    elif term == 'konsole':
+                                        terminal_cmd = [term, '-e', 'bash', '-c']
+                                    elif term == 'xterm':
+                                        terminal_cmd = [term, '-e', 'bash', '-c']
+                                    elif term == 'xfce4-terminal':
+                                        terminal_cmd = [term, '-x', 'bash', '-c']
+                                    break
+                        
+                        if terminal_cmd:
+                            full_cmd = terminal_cmd + [f'sudo {self.command} && read -p "按Enter键继续..."']
+                            self.process = subprocess.Popen(
+                                full_cmd,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True
+                            )
+                            # 在新终端中执行时，我们无法直接捕获输出，所以模拟成功
+                            self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令已在新终端中启动: {self.command}")
+                            # 模拟命令完成，发送成功信号
+                            self.stop_timeout_timer()
+                            self.status_signal.emit(self.index, "success")
+                            self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令已在新终端中启动，请在终端窗口中查看执行结果")
+                            self.finished_signal.emit(0)
+                            return
+                        else:
+                            self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 未找到可用的终端程序，将在当前进程中执行")
+                    
                     # 尝试使用sudo执行，并处理密码输入
                     # 注意：在实际使用中，可能需要配置sudo免密或使用其他安全的权限管理方式
                     self.process = subprocess.Popen(
@@ -84,7 +126,72 @@ class CommandExecutor(QThread):
                         bufsize=1
                     )
             else:
-                # 不需要特殊权限时直接执行
+                # 不需要特殊权限时执行
+                if self.new_terminal:
+                    if sys.platform == 'win32':
+                        # Windows下在新终端中执行
+                        # 使用临时批处理文件执行命令
+                        temp_bat = os.path.join(tempfile.gettempdir(), f"command_{self.index}.bat")
+                        with open(temp_bat, 'w') as f:
+                            f.write(self.command + '\npause')  # 添加pause以便查看输出
+                        
+                        try:
+                            self.process = subprocess.Popen(
+                                ["start", "cmd", "/c", temp_bat],
+                                shell=True
+                            )
+                            # 在新终端中执行时，我们无法直接捕获输出，所以模拟成功
+                            self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令已在新终端中启动: {self.command}")
+                            return
+                        finally:
+                            # 确保临时文件被删除
+                            try:
+                                # 延迟删除，让命令有时间执行
+                                import threading
+                                def remove_temp_file():
+                                    time.sleep(5)
+                                    if os.path.exists(temp_bat):
+                                        try:
+                                            os.remove(temp_bat)
+                                        except:
+                                            pass
+                                threading.Thread(target=remove_temp_file, daemon=True).start()
+                            except:
+                                pass
+                    else:
+                        # Linux/Mac下在新终端中执行
+                        terminal_cmd = []
+                        if sys.platform == 'darwin':  # macOS
+                            terminal_cmd = ['open', '-a', 'Terminal', 'bash', '-c']
+                        else:  # Linux
+                            # 尝试不同的终端程序
+                            for term in ['gnome-terminal', 'konsole', 'xterm', 'xfce4-terminal']:
+                                if shutil.which(term):
+                                    if term == 'gnome-terminal':
+                                        terminal_cmd = [term, '--', 'bash', '-c']
+                                    elif term == 'konsole':
+                                        terminal_cmd = [term, '-e', 'bash', '-c']
+                                    elif term == 'xterm':
+                                        terminal_cmd = [term, '-e', 'bash', '-c']
+                                    elif term == 'xfce4-terminal':
+                                        terminal_cmd = [term, '-x', 'bash', '-c']
+                                    break
+                        
+                        if terminal_cmd:
+                            full_cmd = terminal_cmd + [f'{self.command} && read -p "按Enter键继续..."']
+                            self.process = subprocess.Popen(
+                                full_cmd,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True
+                            )
+                            # 在新终端中执行时，我们无法直接捕获输出，所以模拟成功
+                            self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令已在新终端中启动: {self.command}")
+                            return
+                        else:
+                            self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 未找到可用的终端程序，将在当前进程中执行")
+                
+                # 在当前进程中执行（默认方式）
                 shell = True if sys.platform == 'win32' else False
                 cmd_args = self.command if shell else self.command.split()
                 self.output_signal.emit(f"[{datetime.now().strftime('%H:%M:%S')}] 命令参数: {cmd_args}")
@@ -615,11 +722,12 @@ class GelloLauncher(QMainWindow):
         # 记录当前步骤开始时间
         self.current_step_start_time = datetime.now()
         
-        # 创建命令执行器
+        # 创建命令执行器，设置new_terminal=True以在不同终端执行每个命令
         self.command_executor = CommandExecutor(
             current_command['cmd'],
             self.current_command_index,
-            current_command['requires_sudo']
+            current_command['requires_sudo'],
+            new_terminal=True
         )
         # 连接信号到槽函数
         self.command_executor.output_signal.connect(self.append_output)
